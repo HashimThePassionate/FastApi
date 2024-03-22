@@ -1,0 +1,3 @@
+# Simple FastApi:
+		
+		Hello World
