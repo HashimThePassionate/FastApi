@@ -1,73 +1,102 @@
 from fastapi.testclient import TestClient
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
+import pytest
+from main import app, Todo, get_session
+from settings import DATABASE_URL, TEST_DATABASE_URL
 
-# https://sqlmodel.tiangolo.com/tutorial/fastapi/tests/#override-a-dependency
-from fastapi_db.main import app, get_session, Todo
-
-from fastapi_db import settings
-
-# https://fastapi.tiangolo.com/tutorial/testing/
-# https://realpython.com/python-assert-statement/
-# https://understandingdata.com/posts/list-of-python-assert-statements-for-unit-tests/
-
-# postgresql://ziaukhan:oSUqbdELz91i@ep-polished-waterfall-a50jz332.us-east-2.aws.neon.tech/neondb?sslmode=require
-
+# Test cases
+client = TestClient(app)
 
 def test_read_main():
-    client = TestClient(app=app)
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"Hello": "World"}
+    assert response.json() == {"title": "Hello World"}
 
-
-def test_write_main():
-
-    connection_string = str(settings.TEST_DATABASE_URL).replace(
+def test_create_todo():
+    connection_string = str(TEST_DATABASE_URL).replace(
         "postgresql", "postgresql+psycopg")
-
     engine = create_engine(
         connection_string, connect_args={"sslmode": "require"}, pool_recycle=300)
-
     SQLModel.metadata.create_all(engine)
-
     with Session(engine) as session:
-
         def get_session_override():
             return session
-
         app.dependency_overrides[get_session] = get_session_override
-
-        client = TestClient(app=app)
-
+        client = TestClient(app)
         todo_content = "buy bread"
-
-        response = client.post("/todos/",
+        response = client.post("/create_todos/",
                                json={"content": todo_content}
                                )
-
         data = response.json()
-
         assert response.status_code == 200
         assert data["content"] == todo_content
 
-
-def test_read_list_main():
-
-    connection_string = str(settings.TEST_DATABASE_URL).replace(
+def test_get_todo():
+    connection_string = str(TEST_DATABASE_URL).replace(
         "postgresql", "postgresql+psycopg")
-
     engine = create_engine(
         connection_string, connect_args={"sslmode": "require"}, pool_recycle=300)
-
     SQLModel.metadata.create_all(engine)
-
     with Session(engine) as session:
-
         def get_session_override():
             return session
-
         app.dependency_overrides[get_session] = get_session_override
-        client = TestClient(app=app)
-
-        response = client.get("/todos/")
+        client = TestClient(app)
+        response = client.get("/get_todos/")
         assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+def test_get_todo_by_id():
+    connection_string = str(TEST_DATABASE_URL).replace(
+        "postgresql", "postgresql+psycopg")
+    engine = create_engine(
+        connection_string, connect_args={"sslmode": "require"}, pool_recycle=300)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        def get_session_override():
+            return session
+        app.dependency_overrides[get_session] = get_session_override
+        client = TestClient(app)
+        todo_data = {"content": "Test Todo"}
+        response = client.post("/create_todos/", json=todo_data)
+        todo_id = response.json()["id"]
+        response = client.get(f"/get_todos/{todo_id}")
+        assert response.status_code == 200
+        assert response.json()["id"] == todo_id
+
+def test_update_todo():
+    connection_string = str(TEST_DATABASE_URL).replace(
+        "postgresql", "postgresql+psycopg")
+    engine = create_engine(
+        connection_string, connect_args={"sslmode": "require"}, pool_recycle=300)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        def get_session_override():
+            return session
+        app.dependency_overrides[get_session] = get_session_override
+        client = TestClient(app)
+        todo_data = {"content": "Test Todo"}
+        response = client.post("/create_todos/", json=todo_data)
+        todo_id = response.json()["id"]
+        updated_data = {"content": "Updated Todo"}
+        response = client.put(f"/update_todos/{todo_id}", json=updated_data)
+        assert response.status_code == 200
+        assert response.json()["content"] == "Updated Todo"
+
+def test_delete_todo():
+    connection_string = str(TEST_DATABASE_URL).replace(
+        "postgresql", "postgresql+psycopg")
+    engine = create_engine(
+        connection_string, connect_args={"sslmode": "require"}, pool_recycle=300)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        def get_session_override():
+            return session
+        app.dependency_overrides[get_session] = get_session_override
+        client = TestClient(app)
+        todo_data = {"content": "Test Todo"}
+        response = client.post("/create_todos/", json=todo_data)
+        todo_id = response.json()["id"]
+        response = client.delete(f"/delete_todos/{todo_id}")
+        assert response.status_code == 200
+        assert response.json()["message"] == "Todo deleted successfully"
