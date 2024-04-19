@@ -1,23 +1,24 @@
-from contextlib import asynccontextmanager
+from fastapi import HTTPException
+from fastapi import FastAPI, Depends, HTTPException
 from sqlmodel import SQLModel, Session, create_engine, select, Field, Table
+from contextlib import asynccontextmanager
 from fastapi_todoapp import settings
 from typing import Optional, Union, Annotated
-from fastapi import FastAPI, Depends, HTTPException
 import uvicorn
 
 
-class Todo(SQLModel, table=True, extend_existing=True):
-    id: Optional[int] = Field(primary_key=True, default=None)
+class Todo(SQLModel, table=True):
+    id: int | None = Field(primary_key=True, default=None)
     content: str = Field(index=True, max_length=255)
+    is_completed: bool = Field(default=False)
 
 
 connection_string = str(settings.DATABASE_URL).replace(
     "postgresql", "postgresql+psycopg"
 )
 
-engine = create_engine(
-    connection_string, connect_args={"sslmode": "require"}, pool_recycle=300
-)
+engine = create_engine(connection_string, connect_args={
+                       "sslmode": "require"}, pool_recycle=300, pool_size=10, echo=True)
 
 
 def create_db_and_tables():
@@ -28,10 +29,11 @@ def create_db_and_tables():
 async def lifespan(app: FastAPI):
     print("Creating tables..")
     create_db_and_tables()
+    print("Tables Created")
     yield
 
 app = FastAPI(lifespan=lifespan, title="Todo App API",
-              version="0.0.1")
+              version="1.0.0")
 
 
 def get_session():
@@ -41,29 +43,36 @@ def get_session():
 
 @app.get('/')
 def home():
-    return {'title': 'Hello World'}
+    return {'message': 'Simple todo Application'}
 
 
-@app.get('/get_todos/', response_model=list[Todo])
-def get_todoapp(session: Annotated[Session, Depends(get_session)]):
-    todo = session.exec(select(Todo)).all()
+@app.post('/create_todos/', response_model=Todo)
+async def create_todoapp(todo: Todo, session: Annotated[Session, Depends(get_session)]):
+    session.add(todo)
+    session.commit()
+    session.refresh(todo)
     return todo
 
 
+@app.get('/get_todos/', response_model=list[Todo])
+async def get_todoapp(session: Annotated[Session, Depends(get_session)]):
+    todo = session.exec(select(Todo)).all()
+    if todo:
+        return todo
+    else:
+        raise HTTPException(status_code=404, detail="No Task found")
+
+
 @app.get('/get_todos/{todo_id}', response_model=Todo)
-def get_todo_by_id(todo_id: int, session: Session = Depends(get_session)):
+async def get_todo_by_id(todo_id: int, session: Session = Depends(get_session)):
     todo = session.get(Todo, todo_id)
     if not todo:
         raise HTTPException(status_code=404, detail="Todo not found")
     return todo
 
-# Update Todo by ID
-
-
-from fastapi import HTTPException
 
 @app.put('/update_todos/{todo_id}', response_model=Todo)
-def update_todo(todo_id: int, updated_todo: Todo, session: Session = Depends(get_session)):
+async def update_todo(todo_id: int, updated_todo: Todo, session: Session = Depends(get_session)):
     existing_todo = session.get(Todo, todo_id)
     if existing_todo is None:
         raise HTTPException(status_code=404, detail="Todo not found")
@@ -73,9 +82,8 @@ def update_todo(todo_id: int, updated_todo: Todo, session: Session = Depends(get
     return existing_todo
 
 
-
 @app.delete('/delete_todos/{todo_id}')
-def delete_todo(todo_id: int, session: Session = Depends(get_session)):
+async def delete_todo(todo_id: int, session: Session = Depends(get_session)):
     todo = session.get(Todo, todo_id)
     if not todo:
         raise HTTPException(status_code=404, detail="Todo not found")
@@ -84,14 +92,6 @@ def delete_todo(todo_id: int, session: Session = Depends(get_session)):
     return {"message": "Todo deleted successfully"}
 
 
-@app.post('/create_todos/', response_model=Todo)
-def create_todoapp(todo: Todo, session: Annotated[Session, Depends(get_session)]):
-    session.add(todo)
-    session.commit()
-    session.refresh(todo)
-    return todo
-
-
-if __name__ == '__main__':
-    uvicorn.run('fastapi_todoapp.main:app',
-                host='127.0.0.1', port=8000, reload=True)
+# if __name__ == '__main__':
+#     uvicorn.run('fastapi_todoapp.main:app',
+#                 host='127.0.0.1', port=8000, reload=True)
