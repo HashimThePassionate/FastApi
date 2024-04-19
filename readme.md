@@ -1,1 +1,1 @@
-# Learn Generative AI
+# Learn FastApi and SQLModel
